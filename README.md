@@ -1,6 +1,9 @@
 # Starred repos gatherer
 ![image](https://github.com/user-attachments/assets/380000dc-1c39-4912-a19c-1721cc1ad699)
 
+![image](https://github.com/user-attachments/assets/022ed4f1-f6bc-4554-b8a2-87ccf2bff2e9)
+
+
 
 ### Try it here: https://starred-repo-gatherer.streamlit.app/
 ### basically a website made using streamlit in less than 5 minutes to see your own starred repos :)
