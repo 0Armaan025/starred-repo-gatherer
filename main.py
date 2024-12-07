@@ -1,16 +1,21 @@
 import streamlit as st
 import requests
+import pandas as pd
 
-def fetch_starred_repos(token, username):
+
+def fetch_user_repos(token, username):
+    """
+    Fetch repositories owned by the user (not starred repositories).
+    """
     base_url = "https://api.github.com"
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github.v3+json",
     }
-    url = f"{base_url}/users/{username}/starred"
+    url = f"{base_url}/users/{username}/repos"
 
     page = 1
-    all_repos = []
+    user_repos = []
 
     while True:
         response = requests.get(f"{url}?per_page=100&page={page}", headers=headers)
@@ -22,77 +27,89 @@ def fetch_starred_repos(token, username):
         if not repos:
             break
 
-        # Exclude forked repositories
-        non_forked_repos = [repo for repo in repos if not repo["fork"]]
-        all_repos.extend(non_forked_repos)
-
-        # Debug: Show current page progress
-        st.write(f"Fetched page {page} with {len(non_forked_repos)} repos.")
+        # Include only repos owned by the user
+        user_repos.extend([repo for repo in repos if repo["owner"]["login"] == username])
 
         page += 1
-        # Limit pages for testing
-        if page > 5:  # Remove or increase this limit for real use
+        if page > 5:  # Limit pages for testing
             st.warning("Stopping early for testing. Adjust the page limit.")
             break
 
-    return all_repos
+    return user_repos
+
 
 def fetch_stargazers(token, stargazers_url):
+    """
+    Fetch stargazers for a given repository.
+    """
     headers = {"Authorization": f"Bearer {token}"}
     page = 1
-    all_users = []
+    stargazers = set()
 
     while True:
-        response = requests.get(f"{stargazers_url}?per_page=100&page={page}", headers=headers)
+        response = requests.get(f"{stargazers_url}?per_page=100&page={page}", headers=headers, timeout=10)
         if response.status_code != 200:
-            st.warning(f"Stargazers fetch failed: {response.status_code}")
             break
 
-        stargazers = response.json()
-        if not stargazers:
+        stargazers_page = response.json()
+        if not stargazers_page:
             break
 
-        all_users.extend([user["login"] for user in stargazers])
-
+        stargazers.update([user["login"] for user in stargazers_page])
         page += 1
-        # Limit stargazers for testing
-        if page > 2:  # Adjust as needed
-            st.warning("Stopping stargazers early for testing.")
+        if page > 2:  # Limit for testing
             break
 
-    return all_users
+    return stargazers
+
 
 # Streamlit App
-st.title("GitHub Starred Repositories Fetcher")
+st.title("GitHub Repository Stars Summary")
+st.markdown(
+    "Enter your **GitHub Token** and **Username** to fetch a summary of stars on repositories you own."
+)
 
-github_token = st.text_input("GitHub Token", type="password")
-github_username = st.text_input("GitHub Username")
+# Input fields
+github_token = st.text_input("GitHub Token", type="password", help="Enter your GitHub Personal Access Token")
+github_username = st.text_input("GitHub Username", help="Enter your GitHub username")
 
-if st.button("Fetch Repositories"):
+if st.button("Fetch Summary"):
     if github_token and github_username:
-        with st.spinner("Fetching repositories..."):
-            repos = fetch_starred_repos(github_token, github_username)
-
+        with st.spinner("Fetching data..."):
+            # Fetch user-owned repositories
+            repos = fetch_user_repos(github_token, github_username)
             if repos:
-                st.success(f"Fetched {len(repos)} non-forked repositories.")
-
                 total_stars = 0
-                genuine_stars = set()
+                all_stargazers = set()
+                genuine_stargazers = set()
 
                 for repo in repos:
+                    repo_name = repo["name"]
+                    stars = repo["stargazers_count"]
                     stargazers = fetch_stargazers(github_token, repo["stargazers_url"])
-                    repo_name = repo["full_name"]
-                    star_count = repo["stargazers_count"]
 
-                    # Exclude stars by "0Armaan025"
-                    stargazers = [user for user in stargazers if user != "0Armaan025"]
+                    total_stars += stars
+                    all_stargazers.update(stargazers)
 
-                    # Add unique stargazers
-                    total_stars += star_count
-                    genuine_stars.update(stargazers)
+                    # Exclude stars by the username itself
+                    genuine_stargazers.update(stargazers - {github_username})
 
-                    st.write(f"- **Repo:** {repo_name}")
-                    st.write(f"  - Stars: {star_count}")
-                    st.write(f"  - Genuine Stars: {len(set(stargazers))}")
+                # Prepare data for the summary
+                data = {
+                    "Total Stars": [total_stars],
+                    "Unique Stargazers": [len(all_stargazers)],
+                    "Genuine Stars (By Others)": [len(genuine_stargazers)],
+                }
+
+                # Display results in a table
+                st.subheader("Summary")
+                summary_table = pd.DataFrame(data)
+                st.table(summary_table)
+
+                st.subheader("Stargazer Details")
+                st.write(f"**Everyone Who Starred You:** {', '.join(all_stargazers)}")
+                st.write(f"**Genuine Stars By Others:** {', '.join(genuine_stargazers)}")
+            else:
+                st.warning("No repositories found for the given username.")
     else:
-        st.error("Please provide a GitHub Token and Username.")
+        st.error("Please provide both a GitHub Token and Username.")
